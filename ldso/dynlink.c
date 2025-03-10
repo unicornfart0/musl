@@ -32,6 +32,9 @@ static size_t ldso_page_size;
 #define PAGE_SIZE ldso_page_size
 #endif
 
+#define STRINGIFY(x) __STRINGIFY(x)
+#define __STRINGIFY(x) #x
+
 #define malloc __libc_malloc
 #define calloc __libc_calloc
 #define realloc __libc_realloc
@@ -454,7 +457,7 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 		tls_val = def.sym ? def.sym->st_value : 0;
 
 		if ((type == REL_TPOFF || type == REL_TPOFF_NEG)
-		    && def.dso->tls_id > static_tls_cnt) {
+		    && def.dso && def.dso->tls_id > static_tls_cnt) {
 			error("Error relocating %s: %s: initial-exec TLS "
 				"resolves to dynamic definition in %s",
 				dso->name, name, def.dso->name);
@@ -503,14 +506,14 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 			break;
 #ifdef TLS_ABOVE_TP
 		case REL_TPOFF:
-			*reloc_addr = tls_val + def.dso->tls.offset + TPOFF_K + addend;
+			*reloc_addr = (def.dso ? tls_val + def.dso->tls.offset + TPOFF_K : 0) + addend;
 			break;
 #else
 		case REL_TPOFF:
-			*reloc_addr = tls_val - def.dso->tls.offset + addend;
+			*reloc_addr = (def.dso ? tls_val - def.dso->tls.offset : 0) + addend;
 			break;
 		case REL_TPOFF_NEG:
-			*reloc_addr = def.dso->tls.offset - tls_val + addend;
+			*reloc_addr = (def.dso ? def.dso->tls.offset - tls_val : 0) + addend;
 			break;
 #endif
 		case REL_TLSDESC:
@@ -1190,7 +1193,7 @@ static struct dso *load_library(const char *name, struct dso *needed_by)
 	if (find_sym(&temp_dso, "__libc_start_main", 1).sym &&
 	    find_sym(&temp_dso, "stdin", 1).sym) {
 		unmap_library(&temp_dso);
-		return load_library("libc.so", needed_by);
+		return load_library(STRINGIFY(LIBC_SONAME), needed_by);
 	}
 	/* Past this point, if we haven't reached runtime yet, ldso has
 	 * committed either to use the mapped library or to abort execution.
@@ -1726,7 +1729,7 @@ hidden void __dls2(unsigned char *base, size_t *sp)
 		ldso.base = base;
 	}
 	Ehdr *ehdr = __ehdr_start ? (void *)__ehdr_start : (void *)ldso.base;
-	ldso.name = ldso.shortname = "libc.so";
+	ldso.name = ldso.shortname = STRINGIFY(LIBC_SONAME);
 	ldso.phnum = ehdr->e_phnum;
 	ldso.phdr = laddr(&ldso, ehdr->e_phoff);
 	ldso.phentsize = ehdr->e_phentsize;
